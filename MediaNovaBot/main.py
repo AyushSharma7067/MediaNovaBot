@@ -1,9 +1,6 @@
 import logging
-from core.bot import client
-from config import BOT_TOKEN
-
-# stop for now ---------------------------------------
-# from handlers.check_deps import check_and_setup, start_midnight_updater
+from config import BOT_TOKEN, missing_required_settings
+from handlers.check_deps import check_and_setup
 
 # ─── Logging (one place, applied everywhere) ─────────────────────
 logging.basicConfig(
@@ -13,36 +10,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ─── Import handlers (registers them on the client) ──────────────
-import handlers.user_commands
-import handlers.admin_tasks
-import handlers.force_join
-import handlers.variables
-import handlers.Instagram_downloader
-import handlers.facebook_downloader
-
-
 def main():
     logger.info("Bot is starting...")
 
-    # Step 1 — Check and install dependencies
-    # logger.info("Step 1: Checking dependencies...")
-    # if not check_and_setup():
-    #     logger.error("Dependency check failed. Exiting.")
-    #     return
+    missing = missing_required_settings()
+    if missing:
+        logger.error("Missing required environment variables: %s", ", ".join(missing))
+        logger.error("Add them as Replit Secrets before starting the bot.")
+        return 1
 
-    # Step 2 — Start the midnight auto-updater
-    # logger.info("Step 2: Starting midnight auto-updater...")
-    # start_midnight_updater()
+    # Import the client and handlers only after settings are validated.
+    # Telethon rejects an empty API ID/API hash while constructing a client.
+    from core.bot import client
 
-    # Step 3 — Connect and start the bot
-    # logger.info("Step 3: Connecting to Telegram...")
+    # Importing handlers registers their event callbacks on the client.
+    import handlers.user_commands
+    import handlers.admin_tasks
+    import handlers.force_join
+    import handlers.variables
+    import handlers.Instagram_downloader
+    import handlers.facebook_downloader
+
+    # Python packages are installed by the project package manager. This
+    # startup check verifies the external tools needed by download handlers.
+    if not check_and_setup():
+        logger.error("Required download tools are unavailable. Exiting.")
+        return 1
+
     logger.info("Connecting to Telegram...")
     client.start(bot_token=BOT_TOKEN)
 
     logger.info("Bot is running! Press Ctrl+C to stop.")
     client.run_until_disconnected()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
