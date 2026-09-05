@@ -1,0 +1,5 @@
+telethon>=1.44.0
+python-dotenv>=1.2.3
+instaloader>=4.15.3
+yt-dlp>=2026.8.19
+schedule>=1.2.2
