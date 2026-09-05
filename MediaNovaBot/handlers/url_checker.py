@@ -4,10 +4,11 @@ import re
 # Platforms URL Validator
 # ------------------------------------------------------------------------------
 def is_valid_platform_url(url: str) -> dict:
+    url = url.strip()
 
     patterns = {
-        "instagram": r"^https?://(www\.)?instagram\.com/(reel)/([A-Za-z0-9_-]+)/?",
-        "facebook": r"^https?://(www\.)?facebook\.com/share/(v|r)/([A-Za-z0-9_-]+)/?",
+        "instagram": r"^https?://(www\.)?instagram\.com/(reel|reels|p)/([A-Za-z0-9_-]+)/?(?:\?.*)?$",
+        "facebook": r"^https?://(www\.)?facebook\.com/share/(v|r)/([A-Za-z0-9_-]+)/?(?:\?.*)?$",
     }
 
     for platform, pattern in patterns.items():
