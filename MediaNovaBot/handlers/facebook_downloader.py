@@ -1,7 +1,7 @@
 import yt_dlp
 
 
-def process_facebook_content(url):
+def process_facebook_content(url: str) -> dict:
     try:
         ydl_opts = {
             "quiet": True,
@@ -15,14 +15,41 @@ def process_facebook_content(url):
         all_formats = info.get("formats", [])
         formats = []
 
-        # facebook usually gives two literal muxed formats: "sd" and "hd"
-        for fid, tag, label in [("hd", "hd", "720p(HD)"), ("sd", "sd", "360p(SD)")]:
-            match = next((f for f in all_formats if f.get("format_id") == fid), None)
+        # Facebook often exposes literal "sd"/"hd" formats, but yt-dlp may
+        # return different format IDs. Prefer the named formats and fall back
+        # to the best available direct video URLs.
+        for fid, tag, label in [("hd", "hd", "720p (HD)"), ("sd", "sd", "360p (SD)")]:
+            match = next(
+                (f for f in all_formats if f.get("format_id") == fid and f.get("url")),
+                None,
+            )
             if match and match.get("url"):
                 formats.append({"quality": tag, "label": label, "url": match["url"]})
 
         if not formats:
-            return {"success": False, "error": "No sd/hd formats found", "formats": []}
+            candidates = [
+                f for f in all_formats
+                if f.get("url") and f.get("vcodec") not in (None, "none")
+            ]
+            candidates.sort(
+                key=lambda f: (f.get("height") or 0, f.get("tbr") or 0),
+                reverse=True,
+            )
+            seen_urls = set()
+            for index, item in enumerate(candidates[:2]):
+                url_value = item["url"]
+                if url_value in seen_urls:
+                    continue
+                seen_urls.add(url_value)
+                height = item.get("height")
+                label = f"{height}p" if height else f"Format {index + 1}"
+                formats.append(
+                    {"quality": item.get("format_id", str(index + 1)),
+                     "label": label, "url": url_value}
+                )
+
+        if not formats:
+            return {"success": False, "error": "No downloadable video formats found", "formats": []}
 
         return {"success": True, "error": None, "formats": formats}
 
@@ -32,8 +59,7 @@ def process_facebook_content(url):
 
 if __name__ == "__main__":
     test_url = input("Enter Facebook video URL: ").strip()
-    url_list = []
-    result = get_fb_from_ytdlp(test_url)
+    result = process_facebook_content(test_url)
 
     print("\nSuccess:", result["success"])
 
