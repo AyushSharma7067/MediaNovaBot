@@ -1,17 +1,21 @@
+import asyncio
+import html
+
 from telethon import events, Button
 from handlers.force_join import force_join
 from handlers.Instagram_downloader import process_instagram_content
 from handlers.facebook_downloader import process_facebook_content
 from handlers.url_checker import is_valid_platform_url
 from core.bot import client
-import os
+from handlers.check_deps import bot_is_updating
 
 
 HOME_MESSAGE = (
     "<b>🎬 Welcome to MediaNova Bot</b>\n\n"
     "📥 Download Instagram Reels\n"
+    "📘 Download Facebook Reels & Videos\n"
     "🔜 YouTube & X — Coming Soon\n\n"
-    "🔗 <i>Send a valid Reel link to get started.</i>"
+    "🔗 <i>Just send a valid URL to get started!</i>"
 )
 
 HOME_BUTTONS = [
@@ -51,54 +55,24 @@ async def profile_callback(event):
     # get sender info
     user = await event.get_sender()  # Get sender full info
     user_id = user.id  # Get user ID
-    username = f"@{user.username}" if user.username else "No username"  # Get username
-    first_name = user.first_name
+    username = f"@{user.username}" if user.username else "No username"
+    first_name = user.first_name or "User"
 
-    # use case of event.delete
-    await event.delete()
-
-    # Make a dir
-    # Parent directory (already exists)
-    # parent_dir = "telegram-bot"
-
-    # Subdirectory you want to create inside parent
-    sub_dir = "user_profile_pic"
-
-    # Full path to the new directory
-    # path = os.path.join(parent_dir, sub_dir)
-    path = f"{sub_dir}"
-
-    # Path to the image( profile pic)
-    file_path = f"{path}/{user_id}.jpg"
-
-    # Create the subirectory if it doesn't exist
-    os.makedirs(path, exist_ok=True)
-
-    # Download profile photo (saved locally as 'profile.jpg')
-    try:
-        await client.download_profile_photo(user_id, file=file_path)
-    except Exception as e:  # Handle errors (e.g., no profile photo)
-        print(f"Error downloading profile photo: {e}")
 
     # Create the profile message
     msg = (
-        f"👤 <b>{first_name}'s</b> <i>Profile</i>\n\n"
+        f"👤 <b>{html.escape(first_name)}'s</b> <i>Profile</i>\n\n"
         f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
         "<i>(tap to copy)</i>\n\n"
-        f"📛 <b>Username:</b> {username}\n\n"
+        f"📛 <b>Username:</b> {html.escape(username)}\n\n"
     )
 
     # Sending (image + text + button) to the user
-    await client.send_file(
-        event.chat_id, file_path, caption=msg, buttons=BACK_BUTTON, parse_mode="html"
+    await event.edit(
+        msg,
+        buttons=BACK_BUTTON,
+        parse_mode="html"
     )
-
-    #  Delete the image after sending
-    # Check if file exists before deleting
-    if os.path.exists(file_path):
-        os.remove(file_path)
-    else:
-        print(f"⚠️ File '{file_path}' does not exist.")
 
 
 # ============================================================
@@ -126,11 +100,15 @@ async def terms_callback(event):
 # ============================================================
 @client.on(events.NewMessage(func=lambda e: not e.is_channel))
 async def handler(event):
-    text = event.text.strip()
+    text = (event.text or "").strip()
     if text.startswith("/"):
         return
 
-    if text.startswith("https://"):
+    if text.startswith(("https://", "http://")):
+        if bot_is_updating():
+            await event.respond("⏳ Bot tools are updating. Please try again shortly.")
+            return
+
         # Check if the URL is a valid Instagram URL
         checker = is_valid_platform_url(text)
 
@@ -138,49 +116,49 @@ async def handler(event):
             final_msg = await event.respond("🔗 Valid URL Found! Processing...")
 
             # Check the platform and type------------
-            if checker["platform"] == "instagram" and checker["type"] == "reel":
+            if checker["platform"] == "instagram":
                 # Process the Instagram content
-                instagram_result = process_instagram_content(checker["shortcode"])
+                instagram_result = await asyncio.to_thread(
+                    process_instagram_content, checker["shortcode"]
+                )
 
                 if instagram_result["success"]:
                     await final_msg.edit(
-                        f"🎥 Video URL: {instagram_result['cdn_url']}",
-                        link_preview=True,
+                        "🎥 <b>Video is ready.</b>\n\n"
+                        "The download link may expire, so save it soon.",
+                        buttons=[
+                            [Button.url("⬇️ Download video", instagram_result["cdn_url"])]
+                        ],
+                        parse_mode="html",
+                        link_preview=False,
                     )
-                    # await event.respond(
-                    #     "🎬 <b>Your Video Link:</b>",
-                    #     buttons=[
-                    #         [Button.url("⬇️ Click to download", result["cdn_url"])]
-                    #     ],
-                    #     parse_mode="html",
-                    #     link_preview=True,
-                    # )
 
                 else:
                     await final_msg.edit(f"❌ Error: {instagram_result['error']}")
 
             else:
-                # Creating facebook link
+                # Reconstruct the canonical Facebook share URL for yt-dlp.
                 facebook_link = f"https://www.facebook.com/share/{checker['type']}/{checker['shortcode']}/"
 
                 # Process the Facebook content
-                facebook_result = process_facebook_content(facebook_link)
+                facebook_result = await asyncio.to_thread(
+                    process_facebook_content, facebook_link
+                )
 
-                # Ectract the video url
-                buttons_text = ""
-                video_dict = {}
+                buttons = []
 
                 if facebook_result.get("success"):
                     for f in facebook_result["formats"]:
                         label = f.get("label")
                         url = f.get("url")
                         if label and url:
-                            video_dict[label] = url
-                            # clickable text line
-                            buttons_text += f"🎬 <a href='{url}'>{label}</a>\n"
+                            buttons.append(Button.url(f"⬇️ {label}", url))
 
                 await final_msg.edit(
-                    f"<b>Available Formats:</b>\n\n{buttons_text}",
+                    "<b>Available formats:</b>\n\n"
+                    "Download links may expire, so save the video soon."
+                    if buttons else f"❌ Error: {facebook_result.get('error', 'Unknown error')}",
+                    buttons=[buttons] if buttons else None,
                     parse_mode="html",
                     link_preview=False,
                 )
