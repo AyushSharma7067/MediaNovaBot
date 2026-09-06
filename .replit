@@ -1,6 +1,45 @@
-run = "python main.py"
-modules = ["python-base-3.13"]
+modules = ["nodejs-24", "python-base-3.13"]
 
-[nix]
-channel = "stable-25_05"
-packages = ["openssl", "ffmpeg"]
+    [deployment]
+    run = ["python", "main.py"]
+    deploymentTarget = "vm"
+
+    [deployment.postBuild]
+    args = ["pnpm", "store", "prune"]
+    env = { "CI" = "true" }
+
+    [workflows]
+    runButton = "Project"
+
+    [[workflows.workflow]]
+    name = "Project"
+    mode = "parallel"
+    author = "agent"
+
+    [[workflows.workflow.tasks]]
+    task = "workflow.run"
+    args = "MediaNovaBot"
+
+    [[workflows.workflow]]
+    name = "MediaNovaBot"
+    author = "agent"
+
+    [[workflows.workflow.tasks]]
+    task = "shell.exec"
+    args = "python main.py"
+
+    [workflows.workflow.metadata]
+    outputType = "console"
+
+    [agent]
+    stack = "PNPM_WORKSPACE"
+    expertMode = true
+
+    [postMerge]
+    path = "scripts/post-merge.sh"
+    timeoutMs = 20000
+
+    [nix]
+    channel = "stable-25_05"
+    packages = ["openssl", "ffmpeg"]
+    
